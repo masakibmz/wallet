@@ -1,11 +1,9 @@
-# 在 GitHub Secrets 配好证书后：Actions → iOS IPA → Run workflow，或 push 到 main。
-# 说明见 docs/ios-github-actions-setup.md
+# 仅手动触发。需要：$99 开发者计划网页证书，或 Mac/Xcode 导出 p12 + 描述文件填 Secrets。
+# 免费 Apple ID 无 Certificates 网页权限 → 请用 Mac Personal Team 本地打包，见 docs/ios-github-actions-setup.md
 name: iOS IPA
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
 
 jobs:
   build-ipa:

@@ -1,12 +1,41 @@
-# 仅手动触发。需要：$99 开发者计划网页证书，或 Mac/Xcode 导出 p12 + 描述文件填 Secrets。
-# 免费 Apple ID 无 Certificates 网页权限 → 请用 Mac Personal Team 本地打包，见 docs/ios-github-actions-setup.md
+# 仅手动 Run workflow。未填签名 Secrets 时会跳过打包（绿勾 + 说明），不会误报失败。
+# 需要 $99 网页证书或 Mac 导出 p12/描述文件，见 docs/ios-github-actions-setup.md
 name: iOS IPA
 
 on:
   workflow_dispatch:
 
 jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      signing_ready: ${{ steps.check.outputs.signing_ready }}
+    steps:
+      - id: check
+        env:
+          CERT: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          PROFILE: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+        run: |
+          if [ -n "$CERT" ] && [ -n "$PROFILE" ]; then
+            echo "signing_ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "signing_ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=未配置 iOS 签名::GitHub Secrets 缺少 BUILD_CERTIFICATE_BASE64 / BUILD_PROVISION_PROFILE_BASE64。免费 Apple ID 请用 Mac + Xcode Personal Team 打包；付 $99 或 Mac 导出证书后再填 Secrets。"
+          fi
+
+  skip-no-secrets:
+    needs: gate
+    if: needs.gate.outputs.signing_ready != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 说明
+        run: |
+          echo "已跳过 IPA 构建（无签名材料）。"
+          echo "文档: docs/ios-github-actions-setup.md"
+
   build-ipa:
+    needs: gate
+    if: needs.gate.outputs.signing_ready == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,11 +57,6 @@ jobs:
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
           set -euo pipefail
-          if [ -z "${BUILD_CERTIFICATE_BASE64:-}" ] || [ -z "${BUILD_PROVISION_PROFILE_BASE64:-}" ]; then
-            echo "::error::缺少 Secrets：BUILD_CERTIFICATE_BASE64 / BUILD_PROVISION_PROFILE_BASE64 等，见 docs/ios-github-actions-setup.md"
-            exit 1
-          fi
-
           CERT_PATH="$RUNNER_TEMP/build_cert.p12"
           PP_PATH="$RUNNER_TEMP/build_pp.mobileprovision"
           KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
@@ -62,7 +86,7 @@ jobs:
           PROFILE_NAME="${PROVISIONING_PROFILE_NAME:-}"
           BUNDLE_ID="${IOS_BUNDLE_ID:-com.wallet.wallet}"
           if [ -z "$TEAM_ID" ] || [ -z "$PROFILE_NAME" ]; then
-            echo "::error::缺少 Secrets：APPLE_TEAM_ID、PROVISIONING_PROFILE_NAME（可选 IOS_BUNDLE_ID）"
+            echo "::error::缺少 Secrets：APPLE_TEAM_ID、PROVISIONING_PROFILE_NAME"
             exit 1
           fi
           cat > ios/ExportOptions.plist <<EOF
